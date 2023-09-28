@@ -130,7 +130,7 @@ typedef struct playermove_s
 	qboolean dead;		 // Are we a dead player?
 	int deadflag;
 	int spectator; // Should we use spectator physics model?
-	int movetype;  // Our movement type, NOCLIP, WALK, FLY
+	int movetype;  // Our movement type, NOCLIP, WALK, FLY, SLIDE
 
 	int onground;
 	int waterlevel;

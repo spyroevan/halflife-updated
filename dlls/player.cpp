@@ -1533,7 +1533,7 @@ void CBasePlayer::Jump()
 	// many features in this function use v_forward, so makevectors now.
 	UTIL_MakeVectors(pev->angles);
 
-	// ClearBits(pev->flags, FL_ONGROUND);		// don't stairwalk
+	 ClearBits(pev->flags, FL_ONGROUND);		// don't stairwalk
 
 	SetAnimation(PLAYER_JUMP);
 

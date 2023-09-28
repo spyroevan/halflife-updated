@@ -956,7 +956,7 @@ int PM_FlyMove()
 		if (numplanes >= MAX_CLIP_PLANES)
 		{ // this shouldn't really happen
 			//  Stop our movement if so.
-			VectorCopy(vec3_origin, pmove->velocity);
+			// VectorCopy(vec3_origin, pmove->velocity);
 			//Con_DPrintf("Too many planes 4\n");
 
 			break;
@@ -1276,6 +1276,9 @@ void PM_Friction()
 	if (0 != pmove->waterjumptime)
 		return;
 
+	if (pmove->movetype == MOVETYPE_SLIDE)
+		return;
+
 	// Get velocity
 	vel = pmove->velocity;
 
@@ -1544,6 +1547,8 @@ bool PM_CheckWater()
 	float height;
 	float heightover2;
 
+	
+
 	// Pick a spot just above the players feet.
 	point[0] = pmove->origin[0] + (pmove->player_mins[pmove->usehull][0] + pmove->player_maxs[pmove->usehull][0]) * 0.5;
 	point[1] = pmove->origin[1] + (pmove->player_mins[pmove->usehull][1] + pmove->player_maxs[pmove->usehull][1]) * 0.5;
@@ -1610,6 +1615,7 @@ void PM_CatagorizePosition()
 {
 	Vector point;
 	pmtrace_t tr;
+	
 
 	// if the player hull point one unit down is solid, the player
 	// is on ground
@@ -1626,8 +1632,13 @@ void PM_CatagorizePosition()
 	point[0] = pmove->origin[0];
 	point[1] = pmove->origin[1];
 	point[2] = pmove->origin[2] - 2;
-
-	if (pmove->velocity[2] > 180) // Shooting up really fast.  Definitely not on ground.
+	
+	if (pmove->movetype == MOVETYPE_SLIDE)
+	{
+		
+		pmove->onground = -1;
+	}
+	else if (pmove->velocity[2] > 180) // Shooting up really fast.  Definitely not on ground.
 	{
 		pmove->onground = -1;
 	}
@@ -2628,7 +2639,7 @@ void PM_Jump()
 	}
 
 	// No more effect
-	if (pmove->onground == -1)
+	if (pmove->onground == -1 && pmove->movetype != MOVETYPE_SLIDE)
 	{
 		// Flag that we jumped.
 		// HACK HACK HACK
@@ -2643,7 +2654,7 @@ void PM_Jump()
 	// In the air now.
 	pmove->onground = -1;
 
-	PM_PreventMegaBunnyJumping();
+	//PM_PreventMegaBunnyJumping();
 
 	// Don't play jump sounds while frozen.
 	if ((pmove->flags & FL_FROZEN) == 0)
@@ -2713,9 +2724,12 @@ void PM_CheckWaterJump()
 	pmtrace_t tr;
 	int savehull;
 
+
+
 	// Already water jumping.
 	if (0 != pmove->waterjumptime)
 		return;
+
 
 	// Don't hop out if we just jumped in
 	if (pmove->velocity[2] < -180)
@@ -3103,11 +3117,16 @@ void PM_PlayerMove(qboolean server)
 			PM_LadderMove(pLadder);
 		}
 		else if (pmove->movetype != MOVETYPE_WALK &&
-				 pmove->movetype != MOVETYPE_NOCLIP)
+				 pmove->movetype != MOVETYPE_NOCLIP &&
+				 pmove->movetype != MOVETYPE_SLIDE)
 		{
 			// Clear ladder stuff unless player is noclipping
 			//  it will be set immediately again next frame if necessary
 			pmove->movetype = MOVETYPE_WALK;
+		}
+		else if (pmove->movetype == MOVETYPE_SLIDE) //TODO: change to if isSliding
+		{
+			pmove->movetype = MOVETYPE_SLIDE; // SLIDE: This is stupid and probably redundant, which is exactly why it's here. This is a valve game afterall.
 		}
 	}
 
@@ -3125,6 +3144,55 @@ void PM_PlayerMove(qboolean server)
 		break;
 
 	case MOVETYPE_NONE:
+		break;
+
+	case MOVETYPE_SLIDE:
+		//PM_Slide();
+		PM_AddCorrectGravity();
+		if ((pmove->cmd.buttons & IN_JUMP) != 0)
+		{
+			PM_Jump2();
+		}
+		else
+		{
+			pmove->oldbuttons &= ~IN_JUMP;
+		}
+
+		// Fricion is handled before we add in any base velocity. That way, if we are on a conveyor,
+		//  we don't slow when standing still, relative to the conveyor.
+
+		// Make sure velocity is valid.
+		PM_CheckVelocity();
+
+		//PM_AirMove(); // Take into account movement when in air.		
+		PM_Slide();
+
+		// Set final flags.
+		PM_CatagorizePosition();
+
+		// Now pull the base velocity back out.
+		// Base velocity is set if you are on a moving object, like
+		//  a conveyor (or maybe another monster?)
+		//VectorSubtract(pmove->velocity, pmove->basevelocity, pmove->velocity);
+
+		// Make sure velocity is valid.
+		PM_CheckVelocity();
+
+		// Add any remaining gravitational component.
+		if (!PM_InWater())
+		{
+			PM_FixupGravityVelocity();
+		}
+
+		// If we are on ground, no downward velocity.
+		//if (pmove->onground != -1)
+		//{
+		//	pmove->velocity[2] = 0;
+		//}
+
+		// See if we landed on the ground with enough force to play
+		//  a landing sound.
+		//PM_CheckFalling();
 		break;
 
 	case MOVETYPE_NOCLIP:
@@ -3227,7 +3295,7 @@ void PM_PlayerMove(qboolean server)
 			{
 				pmove->oldbuttons &= ~IN_JUMP;
 			}
-
+			
 			// Fricion is handled before we add in any base velocity. That way, if we are on a conveyor,
 			//  we don't slow when standing still, relative to the conveyor.
 			if (pmove->onground != -1)
@@ -3483,4 +3551,241 @@ bool PM_GetHullBounds(int hullnumber, float* mins, float* maxs)
 	}
 
 	return false;
+}
+
+void PM_Slide() // Half-Life: SLIDE
+{
+	// This is code copied from PM_AirMove(), which I've then botched for my own purposes.
+	// This code is called by setting pmove->movetype = MOVETYPE_SLIDE
+
+
+	//   Note:	This mod's code is actual garbage. I have done no testing, no debugging, and
+	//			no tidying. This mod is a proof of concept, and I have other things I have to
+	//			do today. If the mod doesn't work, or if it runs horribly, my bad. GoldSrc is
+	//			honestly just a stop gap for me, as ideally the final version of the mod will
+	//			be running in Source. Hell, I might even port it to Gmod if i have the time.
+	//			The only real reason I'm doing a GoldSrc version is to get acquainted with
+	//			the basics of what i'm doing before diving into Source. GoldSrc is much closer
+	//			to Quake than Source is, meaning it'll be easier to port the code of quake's
+	//			Slide mod to GoldSrc first than to go straight from Quake to Source.
+
+	int i;
+	Vector wishvel;
+	float fmove, smove;
+	Vector wishdir;
+	float wishspeed;
+
+	// Copy movement amounts
+	fmove = pmove->cmd.forwardmove;
+	smove = pmove->cmd.sidemove;
+
+	// Zero out z components of movement vectors
+	pmove->forward[2] = 0;
+	pmove->right[2] = 0;
+	// Renormalize
+	VectorNormalize(pmove->forward);
+	VectorNormalize(pmove->right);
+
+	// Determine x and y parts of velocity
+	for (i = 0; i < 2; i++)
+	{
+		wishvel[i] = pmove->forward[i] * fmove + pmove->right[i] * smove;
+	}
+	// Zero out z part of velocity
+	wishvel[2] = 0;
+
+	// Determine maginitude of speed of move
+	VectorCopy(wishvel, wishdir);
+	wishspeed = VectorNormalize(wishdir);
+
+	// Clamp to server defined max speed
+	//if (wishspeed > pmove->maxspeed)
+	//{
+	//	VectorScale(wishvel, pmove->maxspeed / wishspeed, wishvel);
+	//	wishspeed = pmove->maxspeed;
+	//}
+
+	PM_AirAccelerate(wishdir, wishspeed, pmove->movevars->airaccelerate);
+
+	// Add in any base velocity to the current velocity.
+	VectorAdd(pmove->velocity, pmove->basevelocity, pmove->velocity);
+
+	PM_FlyMove();
+
+}
+
+
+
+void PM_Jump2() //SLIDE: jump for slide
+{
+	int i;
+	Vector point2;
+	pmtrace_t trace2;
+	point2[0] = pmove->origin[0];
+	point2[1] = pmove->origin[1];
+	point2[2] = pmove->origin[2] - 45;
+	//point2[2] = pmove->origin[2] - 2;
+
+	if (0 != pmove->dead)
+	{
+		pmove->oldbuttons |= IN_JUMP; // don't jump again until released
+		return;
+	}
+
+	
+
+	const bool tfc = atoi(pmove->PM_Info_ValueForKey(pmove->physinfo, "tfc")) == 1;
+
+	// Spy that's feigning death cannot jump
+	if (tfc &&
+		(pmove->deadflag == (DEAD_DISCARDBODY + 1)))
+	{
+		return;
+	}
+
+	/*
+	// See if we are waterjumping.  If so, decrement count and return.
+	if (0 != pmove->waterjumptime)
+	{
+		pmove->waterjumptime -= pmove->cmd.msec;
+		if (pmove->waterjumptime < 0)
+		{
+			pmove->waterjumptime = 0;
+		}
+		return;
+	}
+
+	// If we are in the water most of the way...
+	if (pmove->waterlevel >= 2)
+	{ // swimming, not jumping
+		pmove->onground = -1;
+
+		if (pmove->watertype == CONTENTS_WATER) // We move up a certain amount
+			pmove->velocity[2] = 100;
+		else if (pmove->watertype == CONTENTS_SLIME)
+			pmove->velocity[2] = 80;
+		else // LAVA
+			pmove->velocity[2] = 50;
+
+		// play swiming sound
+		if (pmove->flSwimTime <= 0)
+		{
+			// Don't play sound again for 1 second
+			pmove->flSwimTime = 1000;
+			switch (pmove->RandomLong(0, 3))
+			{
+			case 0:
+				pmove->PM_PlaySound(CHAN_BODY, "player/pl_wade1.wav", 1, ATTN_NORM, 0, PITCH_NORM);
+				break;
+			case 1:
+				pmove->PM_PlaySound(CHAN_BODY, "player/pl_wade2.wav", 1, ATTN_NORM, 0, PITCH_NORM);
+				break;
+			case 2:
+				pmove->PM_PlaySound(CHAN_BODY, "player/pl_wade3.wav", 1, ATTN_NORM, 0, PITCH_NORM);
+				break;
+			case 3:
+				pmove->PM_PlaySound(CHAN_BODY, "player/pl_wade4.wav", 1, ATTN_NORM, 0, PITCH_NORM);
+				break;
+			}
+		}
+
+		return;
+	}
+
+	
+
+	// No more effect
+	if (pmove->onground == -1 && pmove->movetype != MOVETYPE_SLIDE)
+	{
+		// Flag that we jumped.
+		// HACK HACK HACK
+		// Remove this when the game .dll no longer does physics code!!!!
+		pmove->oldbuttons |= IN_JUMP; // don't jump again until released
+		return;						  // in air, so no effect
+	}
+
+	*/
+	
+	
+	
+	trace2 = pmove->PM_PlayerTrace(pmove->origin, point2, PM_NORMAL, -1);
+	if (trace2.fraction >= 1.0)
+	{
+		pmove->oldbuttons |= IN_JUMP;
+		return;
+	}
+
+
+	if ((pmove->oldbuttons & IN_JUMP) != 0)
+		return; // don't pogo stick
+
+	// In the air now.
+	pmove->onground = -1;
+
+	//PM_PreventMegaBunnyJumping();
+
+	// Don't play jump sounds while frozen.
+	if ((pmove->flags & FL_FROZEN) == 0)
+	{
+		if (tfc)
+		{
+			pmove->PM_PlaySound(CHAN_BODY, "player/plyrjmp8.wav", 0.5, ATTN_NORM, 0, PITCH_NORM);
+		}
+		else
+		{
+			PM_PlayStepSound(PM_MapTextureTypeStepType(pmove->chtexturetype), 1.0);
+		}
+	}
+	/*
+	// See if user can super long jump?
+	const bool cansuperjump = atoi(pmove->PM_Info_ValueForKey(pmove->physinfo, "slj")) == 1;
+
+	// Acclerate upward
+	// If we are ducking...
+	
+	if ((0 != pmove->bInDuck) || (pmove->flags & FL_DUCKING) != 0)
+	{
+		// Adjust for super long jump module
+		// UNDONE -- note this should be based on forward angles, not current velocity.
+		if (cansuperjump &&
+			(pmove->cmd.buttons & IN_DUCK) != 0 &&
+			(pmove->flDuckTime > 0) &&
+			Length(pmove->velocity) > 50)
+		{
+			pmove->punchangle[0] = -5;
+
+			for (i = 0; i < 2; i++)
+			{
+				pmove->velocity[i] = pmove->forward[i] * PLAYER_LONGJUMP_SPEED * 1.6;
+			}
+
+			pmove->velocity[2] = sqrt(2 * 800 * 56.0);
+		}
+		else
+		{
+			pmove->velocity[2] = sqrt(2 * 800 * 45.0);
+		}
+	}
+	else
+	{
+		pmove->velocity[2] = sqrt(2 * 800 * 45.0);
+	}
+
+	*/
+
+	//pmove->velocity[2] = sqrt(2 * 800 * 45.0);
+	if (pmove->velocity.z >= 0)
+	{
+		pmove->velocity.z += 300;
+	}
+	else
+	{
+		pmove->velocity.z = 300;
+	}
+
+	// Decay it for simulation
+	PM_FixupGravityVelocity();
+
+	// Flag that we jumped.
+	pmove->oldbuttons |= IN_JUMP; // don't jump again until released
 }

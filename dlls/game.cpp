@@ -44,7 +44,7 @@ cvar_t allow_spectators = {"allow_spectators", "0.0", FCVAR_SERVER}; // 0 preven
 
 cvar_t mp_chattime = {"mp_chattime", "10", FCVAR_SERVER};
 
-cvar_t sv_allowbunnyhopping = {"sv_allowbunnyhopping", "0", FCVAR_SERVER};
+cvar_t sv_allowbunnyhopping = {"sv_allowbunnyhopping", "1", FCVAR_SERVER};
 
 //CVARS FOR SKILL LEVEL SETTINGS
 // Agrunt

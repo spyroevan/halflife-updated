@@ -80,6 +80,8 @@
 #define MOVETYPE_BOUNCEMISSILE 11 // bounce w/o gravity
 #define MOVETYPE_FOLLOW 12		  // track movement of aiment
 #define MOVETYPE_PUSHSTEP 13	  // BSP model that needs physics/world collisions (uses nearest hull for world collision)
+#define MOVETYPE_SLIDE 14		  //SLIDE: add a new movement mode for when player is sliding. This should reuse the airmove code.
+
 
 // edict->solid values
 // NOTE: Some movetypes will cause collisions independent of SOLID_NOT/SOLID_TRIGGER when the entity moves

@@ -548,6 +548,21 @@ void ClientCommand(edict_t* pEntity)
 	{
 		player->SelectItem((char*)CMD_ARGV(1));
 	}
+	else if (FStrEq(pcmd, "slide"))	//SLIDE: this adds "slide" as a console command to toggle slide movement.
+	{
+		if (pev->movetype != MOVETYPE_SLIDE)
+		{
+			pev->movetype = MOVETYPE_SLIDE;
+
+			ALERT(at_console, "Slide mode enabled! \n");
+		}
+		else
+		{
+			pev->movetype = MOVETYPE_NONE;
+			ALERT(at_console, "Slide mode disabled! \n");
+		}
+			
+	}
 	else if (((pstr = strstr(pcmd, "weapon_")) != NULL) && (pstr == pcmd))
 	{
 		player->SelectItem(pcmd);
@@ -937,7 +952,8 @@ const char* GetGameDescription()
 	if (g_pGameRules) // this function may be called before the world has spawned, and the game rules initialized
 		return g_pGameRules->GetGameDescription();
 	else
-		return "Half-Life";
+		return "Half-Life Slide";
+		//return "Half-Life";
 }
 
 /*

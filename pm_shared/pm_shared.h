@@ -26,6 +26,8 @@ struct playermove_s;
 void PM_Init(playermove_s* ppmove);
 void PM_Move(playermove_s* ppmove, qboolean server);
 char PM_FindTextureType(const char* name);
+void PM_Slide(void);
+void PM_Jump2(void);
 
 /**
 *	@brief Engine calls this to enumerate player collision hulls, for prediction. Return false if the hullnumber doesn't exist.
