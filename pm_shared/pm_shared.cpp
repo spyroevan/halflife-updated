@@ -2786,7 +2786,7 @@ void PM_CheckFalling()
 {
 	if (pmove->onground != -1 &&
 		0 == pmove->dead &&
-		pmove->flFallVelocity >= PLAYER_FALL_PUNCH_THRESHHOLD)
+		pmove->flFallVelocity >= PLAYER_FALL_PUNCH_THRESHHOLD && pmove->movetype != MOVETYPE_SLIDE)
 	{
 		float fvol = 0.5;
 
@@ -2824,7 +2824,7 @@ void PM_CheckFalling()
 			fvol = 0;
 		}
 
-		if (fvol > 0.0)
+		if (fvol > 0.0 && pmove->movetype)
 		{
 			// Play landing step right away
 			pmove->flTimeStepSound = 0;
@@ -3575,6 +3575,8 @@ void PM_Slide() // Half-Life: SLIDE
 	Vector wishdir;
 	float wishspeed;
 
+	
+
 	// Copy movement amounts
 	fmove = pmove->cmd.forwardmove;
 	smove = pmove->cmd.sidemove;
@@ -3623,8 +3625,8 @@ void PM_Jump2() //SLIDE: jump for slide
 	pmtrace_t trace2;
 	point2[0] = pmove->origin[0];
 	point2[1] = pmove->origin[1];
-	point2[2] = pmove->origin[2] - 45;
-	//point2[2] = pmove->origin[2] - 2;
+	point2[2] = pmove->origin[2] - 45; //SLIDE: this distance is way too much, but it's consistent with the original quake mod so i'll keep it for now.
+	//the original code had:  point2[2] = pmove->origin[2] - 2;
 
 	if (0 != pmove->dead)
 	{
